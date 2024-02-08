@@ -1,0 +1,106 @@
+#file proxysql.cfg
+
+########################################################################################
+# This config file is parsed using libconfig , and its grammar is described in:
+# http://www.hyperrealm.com/libconfig/libconfig_manual.html#Configuration-File-Grammar
+# Grammar is also copied at the end of this file
+########################################################################################
+
+########################################################################################
+# IMPORTANT INFORMATION REGARDING THIS CONFIGURATION FILE:
+########################################################################################
+# On startup, ProxySQL reads its config file (if present) to determine its datadir.
+# What happens next depends on if the database file (disk) is present in the defined
+# datadir (i.e. "/var/lib/proxysql/proxysql.db").
+#
+# If the database file is found, ProxySQL initializes its in-memory configuration from
+# the persisted on-disk database. So, disk configuration gets loaded into memory and
+# then propagated towards the runtime configuration.
+#
+# If the database file is not found and a config file exists, the config file is parsed
+# and its content is loaded into the in-memory database, to then be both saved on-disk
+# database and loaded at runtime.
+#
+# IMPORTANT: If a database file is found, the config file is NOT parsed. In this case
+#            ProxySQL initializes its in-memory configuration from the persisted on-disk
+#            database ONLY. In other words, the configuration found in the proxysql.cnf
+#            file is only used to initial the on-disk database read on the first startup.
+#
+# In order to FORCE a re-initialise of the on-disk database from the configuration file
+# the ProxySQL service should be started with "systemctl start proxysql-initial".
+#
+########################################################################################
+
+datadir="/var/lib/proxysql"
+errorlog="/var/lib/proxysql/proxysql.log"
+
+admin_variables=
+{
+        admin_credentials="admin:admin"
+        mysql_ifaces="0.0.0.0:6032"
+}
+
+
+
+
+mysql_variables=
+{
+        threads=4
+        max_connections=50000
+        default_query_delay=0
+        default_query_timeout=36000000
+        have_compress=true
+        poll_timeout=2000
+        interfaces="0.0.0.0:6033"
+        default_schema="information_schema"
+        stacksize=1048576
+        connect_timeout_server=3000
+# make sure to configure monitor username and password
+        monitor_username="proxysql"
+        monitor_password= "{{ passwords.proxysql_password | default('') }}"
+        monitor_history=600000
+        monitor_connect_interval=60000
+        monitor_ping_interval=1000000
+        monitor_read_only_interval=1500
+        monitor_read_only_timeout=500
+        ping_interval_server_msec=120000
+        ping_timeout_server=500
+        commands_stats=true
+        sessions_sort=true
+        connect_retries_on_failure=10
+}
+
+# Define Percona XtraDB Cluster nodes
+mysql_servers = (
+    {% for host in groups.database_nodes %}
+    {
+        address = "{{ hostvars[host].ansible_host }}"
+        port = 3306
+        hostgroup = 10  # WRITER_HOSTGROUP_ID
+        max_connections = 20000
+        weight = 100
+    },
+    {
+        address = "{{ hostvars[host].ansible_host }}"
+        port = 3306
+        hostgroup = 11  # READER_HOSTGROUP_ID
+        max_connections = 20000
+        weight = 100
+    },
+    {% endfor %}
+)
+
+
+
+# defines all the MySQL users
+mysql_users = (
+    {
+        username = "proxysql"
+        password = "{{ passwords.proxysql_password | default('') }}"
+        default_hostgroup = 10
+        active = 1
+        max_connections = 15000
+        admin-hash_passwords = false
+    }
+)
+
