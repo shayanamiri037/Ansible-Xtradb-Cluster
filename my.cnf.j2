@@ -1,0 +1,100 @@
+# Template my.cnf for PXC
+# Edit to your requirements.
+[client]
+socket=/var/run/mysqld/mysqld.sock
+
+[mysqld]
+server-id=1
+datadir=/var/lib/mysql
+socket=/var/run/mysqld/mysqld.sock
+log-error=/var/log/mysql/error.log
+#general_log_file        = /var/log/mysql/mysql.log
+tmpdir                  = /dev/shm
+#general_log             = 1
+# Disabling pxc-encrypt-cluster-traffic
+pxc-encrypt-cluster-traffic=OFF
+
+pid-file=/var/run/mysqld/mysqld.pid
+bind-address            = 0.0.0.0
+
+# Binary log expiration period is 604800 seconds, which equals 7 days
+binlog_expire_logs_seconds=259200
+
+######## wsrep ###############
+# Path to Galera library
+wsrep_provider=/usr/lib/galera4/libgalera_smm.so
+
+# Cluster connection URL contains IPs of nodes
+#If no IP is found, this implies that a new cluster needs to be created,
+#in order to do that you need to bootstrap this node
+wsrep_cluster_address=gcomm://{{ groups['database_nodes'] | map('extract', hostvars, 'ansible_host') | join(',') }}
+
+# In order for Galera to work correctly binlog format should be ROW
+binlog_format=ROW
+
+# Slave thread to use
+#wsrep_slave_threads=8
+wsrep_applier_threads=8
+wsrep_log_conflicts
+
+# This changes how InnoDB autoincrement locks are managed and is a requirement for Galera
+innodb_autoinc_lock_mode=2
+
+# Node IP address
+wsrep_node_address={{ hostvars[inventory_hostname].ansible_host }}
+# Cluster name
+wsrep_cluster_name=pxc-cluster
+
+#If wsrep_node_name is not specified,  then system hostname will be used
+wsrep_node_name={{ inventory_hostname }}
+
+#pxc_strict_mode allowed values: DISABLED,PERMISSIVE,ENFORCING,MASTER
+pxc_strict_mode=ENFORCING
+
+# SST method
+wsrep_sst_method=xtrabackup-v2
+
+# Percona Monitoring
+#slow_query_log=ON
+#log_output=FILE
+#long_query_time=0
+#log_slow_admin_statements=ON
+#log_slow_slave_statements=ON
+
+#log_slow_rate_limit=100
+#log_slow_rate_type='query'
+#slow_query_log_always_write_time=1
+#log_slow_verbosity='full'
+#slow_query_log_use_global_control='all'
+
+performance_schema=ON
+performance-schema-instrument='statement/%=ON'
+performance-schema-consumer-statements-digest=ON
+innodb_monitor_enable=all
+
+userstat=ON
+
+# ---------------------------------------------------------------------------------
+# Performance
+key_buffer_size = 256M
+innodb_buffer_pool_size = 10G  # Adjust depending on available RAM
+innodb_log_file_size = 512M
+innodb_flush_log_at_trx_commit = 2
+innodb_flush_method = O_DIRECT
+innodb_file_per_table = 1
+
+# Connections
+max_connections = 20000  # Adjust based on expected concurrent connections
+max_allowed_packet = 16M
+thread_cache_size = 16
+
+# Temporary Tables
+tmp_table_size = 256M
+max_heap_table_size = 256M
+
+# Optimizations
+table_open_cache = 400
+innodb_flush_neighbors = 0
+innodb_thread_concurrency = 8  # Match your CPU core count
+#innodb_read_io_threads = 4
+#innodb_write_io_threads = 4
