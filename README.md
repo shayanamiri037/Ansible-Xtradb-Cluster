@@ -48,4 +48,4 @@ Before using this playbook, ensure that the following prerequisites are met:
 6. Run the playbook
 
    ```bash
-   ansible-playbook -i inventory.ini play.yaml
+   ansible-playbook -i inventory.ini -b play.yaml
