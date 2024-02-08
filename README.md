@@ -45,7 +45,7 @@ Before using this playbook, ensure that the following prerequisites are met:
 3. Set your root password and your proxysql password in password.yaml file.
 4. Customize the MySQL configuration in my.cnf.j2 to suit your requirements.
 5. Customize the Proxysql configuration in proxysql_admin_config.j2 and proxysql_config.j2 to suit your requirements.
-6. Run the playbook.yaml
+6. Run the playbook
 
    ```bash
    ansible-playbook -i inventory.ini play.yaml
