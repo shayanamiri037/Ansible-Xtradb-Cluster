@@ -1,0 +1,221 @@
+---
+- name: Install Percona XtraDB Cluster
+  hosts: database_nodes
+  become: yes
+
+  tasks:
+    - name: Update the system
+      apt:
+        update_cache: yes
+
+    - name: Install the necessary packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - wget
+        - gnupg2
+        - lsb-release
+        - curl
+        - python3-pip
+
+    - name: Download and install Percona repository
+      shell: |
+        wget https://repo.percona.com/apt/percona-release_latest.generic_all.deb
+        dpkg -i percona-release_latest.generic_all.deb
+        pip3 install pymysql
+
+      args:
+        chdir: /tmp
+
+    - name: Update package cache after adding Percona repository
+      apt:
+        update_cache: yes
+
+    - name: Enable the release repository for Percona XtraDB Cluster
+      shell: percona-release setup pxc80
+
+    - name: Install Percona Xtradb Cluster
+      shell: DEBIAN_FRONTEND=noninteractive apt install -y percona-xtradb-cluster < /dev/null
+
+    - name: Configure Percona XtraDB Cluster
+      template:
+        src: my.cnf.j2
+        dest: /etc/mysql/mysql.conf.d/mysqld.cnf
+
+
+
+
+- name: Bootstrap nodes and joining to the cluster
+  hosts: database_nodes
+  become: yes
+  vars:
+    passwords_file: "password.yaml"
+
+  tasks:
+    - name: Stop MySQL service on all nodes
+      service:
+        name: mysql
+        state: stopped
+
+    - name: Update safe_to_bootstrap value in grastate.dat
+      replace:
+        path: /var/lib/mysql/grastate.dat
+        regexp: '^safe_to_bootstrap: 0$'
+        replace: 'safe_to_bootstrap: 1'
+      when: inventory_hostname == groups['database_nodes'] | first
+
+
+    - name: Start Bootstrap service on the first node
+      command: systemctl start mysql@bootstrap.service
+      when: inventory_hostname == groups['database_nodes'] | first
+
+    - name: Start MySQL service on other nodes
+      service:
+        name: mysql
+        state: started
+      when: inventory_hostname != groups['database_nodes'] | first
+
+    - name: Stop Bootstrap service on the first node
+      command: systemctl stop mysql@bootstrap
+      when: inventory_hostname == groups['database_nodes'] | first
+
+    - name: Start MySQL service on the first node after bootstrap
+      service:
+        name: mysql
+        state: started
+      when: inventory_hostname == groups['database_nodes'] | first
+
+    - name: Include passwords from file
+      include_vars:
+        file: "{{ passwords_file }}"
+        name: passwords
+
+    - name: Set MySQL root password
+      mysql_user:
+        name: root
+        password: "{{ passwords.mysql_root_password }}"
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        login_user: root
+        login_password: ""  # Empty password for the initial connection
+        state: present
+      when: inventory_hostname == groups['database_nodes'] | first
+
+
+
+
+- name: Install Proxysql
+  hosts: proxysql_nodes
+  become: yes
+  tasks:
+    - name: Update the system
+      apt:
+        update_cache: yes
+
+    - name: Install the necessary packages
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - wget
+        - gnupg2
+        - lsb-release
+        - curl
+        - python3-pip
+
+    - name: Download and install Percona repository
+      shell: |
+        wget https://repo.percona.com/apt/percona-release_latest.generic_all.deb
+        dpkg -i percona-release_latest.generic_all.deb
+        pip3 install pymysql
+
+
+      args:
+        chdir: /tmp
+
+    - name: Update package cache
+      apt:
+        update_cache: yes
+
+    - name: Enable the release repository for Percona XtraDB Cluster
+      shell: percona-release setup pxc80
+
+
+    - name: Install Percona XtraDB Cluster client
+      apt:
+        name: percona-xtradb-cluster-client
+        state: present
+
+    - name: Install ProxySQL
+      apt:
+        name: proxysql2
+        state: present
+
+
+
+
+- name: configure proxysql nodes
+  hosts: database_nodes
+  become: yes
+  vars:
+    passwords_file: "password.yaml"
+
+  tasks:
+
+    - name: Include passwords from file
+      include_vars:
+        file: "{{ passwords_file }}"
+        name: passwords
+
+    - name: Create proxysql user
+      mysql_user:
+        name: proxysql
+        password: "{{ passwords.proxysql_password }}"
+        host: "%"
+        priv: "*.*:ALL"
+        login_user: root
+        login_password:  "{{ passwords.mysql_root_password }}"
+        state: present
+      loop_control:
+        loop_var: item
+      loop: "{{ groups['database_nodes'] }}"
+      when: item == groups['database_nodes'] | first
+
+    - name: Grant privileges to proxysql user
+      mysql_user:
+        name: proxysql
+        priv: "*.*:ALL"
+        host: "%"
+        login_user: root
+        login_password: "{{ passwords.mysql_root_password }}"
+        state: present
+      loop_control:
+        loop_var: item
+      loop: "{{ groups['database_nodes'] }}"
+      when: item == groups['database_nodes'] | first
+
+
+
+
+- name: configure proxysql nodes
+  hosts: proxysql_nodes
+  become: yes
+  vars:
+    passwords_file: "password.yaml"
+
+  tasks:
+
+    - name: Include passwords from file
+      include_vars:
+        file: "{{ passwords_file }}"
+        name: passwords
+
+    - name: Configure Proxysql admin Config File
+      template:
+        src: proxysql_admin_config.j2
+        dest: /etc/proxysql-admin.cnf
+
+    - name: Configure ProxySQL Config File
+      template:
+        src: proxysql_config.j2
+        dest: /etc/proxysql.cnf
